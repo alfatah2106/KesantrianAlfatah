@@ -27,8 +27,8 @@ export const LaporanKegiatan: React.FC = () => {
 
     try {
       const [resKeg, resSup] = await Promise.all([
-        fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'}/records/kegiatan`).then(r => r.json()),
-        fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'}/records/supervisi`).then(r => r.json()),
+        fetch(`${import.meta.env.VITE_API_BASE || ""}/records/kegiatan`).then(r => r.json()),
+        fetch(`${import.meta.env.VITE_API_BASE || ""}/records/supervisi`).then(r => r.json()),
       ]);
 
       const kegiatan = availableKegiatan.find(k => k.id === kegiatanId);

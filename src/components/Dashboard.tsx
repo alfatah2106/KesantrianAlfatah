@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Users, Activity, CheckSquare, Calendar } from 'lucide-react';
 
-const API_BASE_URL = `${import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'}`;
+const API_BASE_URL = `${import.meta.env.VITE_API_BASE || ""}`;
 
 export const Dashboard: React.FC = () => {
   const { genderFilter } = useAppContext();

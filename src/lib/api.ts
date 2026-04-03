@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE;
 const GDRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxmgRjZ72MYOyeb-c64j4NdNO2GzwwZBj62posHP65uzG7GyCeltRuBvJaT3iosqC_1yg/exec';
 
 export const uploadToGDrive = async (file: File): Promise<string> => {
