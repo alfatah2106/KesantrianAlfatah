@@ -19,8 +19,8 @@ export const JurnalKalender: React.FC = () => {
     const loadData = async () => {
       try {
         const [resKeg, resSup] = await Promise.all([
-          fetch('http://localhost:5000/api/records/kegiatan').then(r => r.json()),
-          fetch('http://localhost:5000/api/records/supervisi').then(r => r.json()),
+          fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'}/records/kegiatan`).then(r => r.json()),
+          fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'}/records/supervisi`).then(r => r.json()),
         ]);
 
         const filteredKegiatan = resKeg.filter(

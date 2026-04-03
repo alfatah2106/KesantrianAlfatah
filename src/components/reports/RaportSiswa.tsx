@@ -39,7 +39,7 @@ export const RaportSiswa: React.FC = () => {
     if (!dateFrom || !dateTo || !siswaId) return;
 
     try {
-      const res = await fetch('http://localhost:5000/api/records/supervisi');
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'}/records/supervisi`);
       const supervisiRecords = await res.json();
       
       const siswa = masterSiswa.find(s => s.id === siswaId);

@@ -26,7 +26,7 @@ export const LaporanStaff: React.FC = () => {
     if (!dateFrom || !dateTo || !staffId) return;
 
     try {
-      const res = await fetch('http://localhost:5000/api/records/kegiatan');
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000/api'}/records/kegiatan`);
       const kegiatanRecords = await res.json();
 
       const staff = masterStaff.find(s => s.id === staffId);
