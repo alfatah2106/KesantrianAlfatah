@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { MASTER_KEGIATAN, MASTER_STAFF } from '../../data/mock';
-import { AbsensiRecord, FormKegiatanData, Kehadiran, Nilai } from '../../types';
-import { addKegiatanRecord } from '../../lib/storage';
+import { fetchStaff, fetchKegiatan, submitFormKegiatan, uploadToGDrive } from '../../lib/api';
+import { AbsensiRecord, FormKegiatanData, Kehadiran, Nilai, Staff, MasterKegiatan } from '../../types';
 
 export const FormKegiatan: React.FC = () => {
   const { user, genderFilter } = useAppContext();
@@ -12,24 +11,31 @@ export const FormKegiatan: React.FC = () => {
   const [catatan, setCatatan] = useState('');
   const [absensi, setAbsensi] = useState<AbsensiRecord[]>([]);
   const [fotoUrl, setFotoUrl] = useState<string>('');
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Filter kegiatan based on gender filter
-  const availableKegiatan = MASTER_KEGIATAN.filter(
-    k => genderFilter === 'Semua' || k.gender === genderFilter
-  );
+  const [availableKegiatan, setAvailableKegiatan] = useState<MasterKegiatan[]>([]);
+  const [availableStaff, setAvailableStaff] = useState<Staff[]>([]);
 
-  // Filter staff based on gender filter if not 'Semua'
-  const availableStaff = MASTER_STAFF.filter(
-    s => genderFilter === 'Semua' || s.gender === genderFilter
-  );
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [st, kg] = await Promise.all([fetchStaff(), fetchKegiatan()]);
+        setAvailableStaff(st.filter((s: Staff) => genderFilter === 'Semua' || s.gender === genderFilter));
+        setAvailableKegiatan(kg.filter((k: MasterKegiatan) => genderFilter === 'Semua' || k.gender === genderFilter));
+      } catch (error) {
+        console.error("Error loading master data", error);
+      }
+    };
+    loadData();
+  }, [genderFilter]);
 
   useEffect(() => {
     if (kegiatanId) {
-      const kegiatan = MASTER_KEGIATAN.find(k => k.id === kegiatanId);
+      const kegiatan: any = availableKegiatan.find(k => k.id === kegiatanId);
       if (kegiatan) {
-        // Initialize absensi ONLY for staff in targetStaffIds
-        const targetStaff = MASTER_STAFF.filter(s => kegiatan.targetStaffIds.includes(s.id));
-        const initialAbsensi: AbsensiRecord[] = targetStaff.map(staff => ({
+        const targetIds = kegiatan.target_staff_ids || kegiatan.targetStaffIds || [];
+        const targetStaff = availableStaff.filter((s: Staff) => targetIds.includes(s.id));
+        const initialAbsensi: AbsensiRecord[] = targetStaff.map((staff: Staff) => ({
           targetId: staff.id,
           targetName: staff.name,
           kehadiran: 'Hadir',
@@ -40,17 +46,16 @@ export const FormKegiatan: React.FC = () => {
     } else {
       setAbsensi([]);
     }
-  }, [kegiatanId]);
+  }, [kegiatanId, availableKegiatan, availableStaff]);
 
-  // Reset selected kegiatan if it doesn't match the new gender filter
   useEffect(() => {
     if (kegiatanId) {
-      const kegiatan = MASTER_KEGIATAN.find(k => k.id === kegiatanId);
+      const kegiatan = availableKegiatan.find(k => k.id === kegiatanId);
       if (kegiatan && genderFilter !== 'Semua' && kegiatan.gender !== genderFilter) {
         setKegiatanId('');
       }
     }
-  }, [genderFilter, kegiatanId]);
+  }, [genderFilter, kegiatanId, availableKegiatan]);
 
   const handleAbsensiChange = (targetId: string, field: keyof AbsensiRecord, value: any) => {
     setAbsensi(prev => prev.map(a => 
@@ -58,50 +63,57 @@ export const FormKegiatan: React.FC = () => {
     ));
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFotoUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setIsUploading(true);
+      try {
+        const url = await uploadToGDrive(file);
+        setFotoUrl(url);
+      } catch (err: any) {
+        alert("Gagal mengunggah foto: " + err.message);
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kegiatanId || !staffId) return;
 
-    const kegiatan = MASTER_KEGIATAN.find(k => k.id === kegiatanId);
+    const kegiatan = availableKegiatan.find(k => k.id === kegiatanId);
     const kegiatanName = kegiatan?.name || '';
-    const staffName = MASTER_STAFF.find(s => s.id === staffId)?.name || '';
+    const staffName = availableStaff.find(s => s.id === staffId)?.name || '';
 
-    const record: FormKegiatanData = {
+    const record: any = {
       id: Math.random().toString(36).substr(2, 9),
-      type: 'kegiatan',
-      kegiatanId,
-      kegiatanName,
-      staffId,
-      staffName,
+      kegiatan_id: kegiatanId,
+      kegiatan_name: kegiatanName,
+      staff_id: staffId,
+      staff_name: staffName,
       catatan,
       absensi,
-      fotoUrl,
+      foto_url: fotoUrl,
       email: user?.email || '',
-      waktu: new Date().toISOString(),
-      gender: kegiatan?.gender || 'Putra', // Use kegiatan's gender
+      gender: kegiatan?.gender || 'Putra',
     };
 
-    addKegiatanRecord(record);
-    alert('Data berhasil disimpan!');
-    
-    // Reset
-    setKegiatanId('');
-    setStaffId('');
-    setCatatan('');
-    setFotoUrl('');
-    setAbsensi([]);
+    try {
+      await submitFormKegiatan(record);
+      alert('Data berhasil disimpan!');
+      
+      setKegiatanId('');
+      setStaffId('');
+      setCatatan('');
+      setFotoUrl('');
+      setAbsensi([]);
+    } catch (err) {
+      alert('Gagal menyimpan data');
+      console.error(err);
+    }
   };
+
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 max-w-4xl mx-auto">
@@ -204,15 +216,20 @@ export const FormKegiatan: React.FC = () => {
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Upload Foto (Optional)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Upload Foto Ke Google Drive (Opsional)</label>
           <input
             type="file"
             accept="image/*"
+            disabled={isUploading}
             onChange={handlePhotoUpload}
-            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
           />
-          {fotoUrl && (
+          {isUploading && (
+              <p className="text-sm text-blue-600 mt-2 font-medium animate-pulse">Sedang mengunggah foto ke Google Drive...</p>
+          )}
+          {fotoUrl && !isUploading && (
             <div className="mt-4">
+              <span className="text-xs text-green-600 mb-1 block">✓ Foto berhasil tersimpan di GDrive</span>
               <img src={fotoUrl} alt="Preview" className="h-40 object-cover rounded-lg border border-gray-200" />
             </div>
           )}
@@ -221,9 +238,10 @@ export const FormKegiatan: React.FC = () => {
         <div className="flex justify-end pt-4 border-t border-gray-100">
           <button
             type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors"
+            disabled={isUploading}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2 px-6 rounded-lg transition-colors"
           >
-            Simpan Kegiatan
+            {isUploading ? 'Menunggu Upload...' : 'Simpan Kegiatan'}
           </button>
         </div>
       </form>

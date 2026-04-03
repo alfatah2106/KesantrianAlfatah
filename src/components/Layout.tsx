@@ -14,6 +14,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ...(user?.role === 'admin' ? [{ id: 'admin-dashboard', label: 'Data Master Admin', icon: Activity }] : []),
     { id: 'form-kegiatan', label: 'Form Kegiatan', icon: ClipboardList },
     { id: 'form-supervisi', label: 'Form Supervisi', icon: CheckSquare },
     { id: 'jurnal', label: 'Jurnal (Kalender)', icon: Calendar },

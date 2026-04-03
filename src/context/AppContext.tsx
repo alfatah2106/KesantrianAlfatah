@@ -3,7 +3,7 @@ import { User, Gender } from '../types';
 
 interface AppContextType {
   user: User | null;
-  login: (email: string) => void;
+  login: (email: string, role?: 'admin' | 'staff') => void;
   logout: () => void;
   genderFilter: Gender | 'Semua';
   setGenderFilter: (gender: Gender | 'Semua') => void;
@@ -22,12 +22,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const login = (email: string) => {
+  const login = (email: string, role: 'admin' | 'staff' = 'staff') => {
     const newUser: User = {
       id: Math.random().toString(36).substr(2, 9),
       name: email.split('@')[0],
       email,
-      role: 'admin',
+      role,
     };
     setUser(newUser);
     localStorage.setItem('kesantrian_user', JSON.stringify(newUser));

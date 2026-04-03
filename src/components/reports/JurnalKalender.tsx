@@ -1,25 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { getLocalData } from '../../lib/storage';
+import { fetchKegiatan } from '../../lib/api';
 import { useAppContext } from '../../context/AppContext';
-import { MASTER_KEGIATAN } from '../../data/mock';
 
 export const JurnalKalender: React.FC = () => {
   const { genderFilter } = useAppContext();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [data, setData] = useState<any>({ kegiatanRecords: [], supervisiRecords: [] });
+  const [masterKegiatan, setMasterKegiatan] = useState<any[]>([]);
 
   useEffect(() => {
-    const allData = getLocalData();
-    const filteredKegiatan = allData.kegiatanRecords.filter(
-      (r: any) => genderFilter === 'Semua' || r.gender === genderFilter
-    );
-    const filteredSupervisi = allData.supervisiRecords.filter(
-      (r: any) => genderFilter === 'Semua' || r.gender === genderFilter
-    );
-    setData({ kegiatanRecords: filteredKegiatan, supervisiRecords: filteredSupervisi });
+    fetchKegiatan().then(setMasterKegiatan).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [resKeg, resSup] = await Promise.all([
+          fetch('http://localhost:5000/api/records/kegiatan').then(r => r.json()),
+          fetch('http://localhost:5000/api/records/supervisi').then(r => r.json()),
+        ]);
+
+        const filteredKegiatan = resKeg.filter(
+          (r: any) => genderFilter === 'Semua' || r.gender === genderFilter
+        ).map((r: any) => ({...r, kegiatanId: r.kegiatan_id || r.kegiatanId, kegiatanName: r.kegiatan_name || r.kegiatanName, staffName: r.staff_name || r.staffName}));
+
+        const filteredSupervisi = resSup.filter(
+          (r: any) => genderFilter === 'Semua' || r.gender === genderFilter
+        ).map((r: any) => ({...r, kegiatanId: r.kegiatan_id || r.kegiatanId, kegiatanName: r.kegiatan_name || r.kegiatanName, staffName: r.staff_name || r.staffName}));
+
+        setData({ kegiatanRecords: filteredKegiatan, supervisiRecords: filteredSupervisi });
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadData();
   }, [genderFilter, currentMonth]);
 
   const daysInMonth = eachDayOfInterval({
@@ -31,13 +48,37 @@ export const JurnalKalender: React.FC = () => {
     const kToday = data.kegiatanRecords.filter((r: any) => isSameDay(parseISO(r.waktu), date));
     const sToday = data.supervisiRecords.filter((r: any) => isSameDay(parseISO(r.waktu), date));
     
-    // Planned activities filtered by gender
-    const plannedActivities = MASTER_KEGIATAN.filter(
-      k => genderFilter === 'Semua' || k.gender === genderFilter
-    );
+    // Day of week: 1=Senin, 7=Minggu
+    const dayOfWeek = date.getDay() === 0 ? 7 : date.getDay();
+    // Week of month: 1-5
+    const weekOfMonth = Math.ceil(date.getDate() / 7);
+
+    // Planned activities (Hanya Rutin yang sesuai Jadwal)
+    const plannedActivities = masterKegiatan.filter(k => {
+      const matchGender = genderFilter === 'Semua' || k.gender === genderFilter;
+      if (!matchGender) return false;
+      if (k.tipe === 'Insidental') return false;
+      
+      const scheduledDays = (k.hari || '').split(',').map(d => d.trim());
+      const scheduledWeeks = (k.pekan || '').split(',').map(w => w.trim());
+      
+      return scheduledDays.includes(String(dayOfWeek)) && scheduledWeeks.includes(String(weekOfMonth));
+    });
+
     const planned = plannedActivities.length;
-    const actual = new Set([...kToday.map((k:any) => k.kegiatanId), ...sToday.map((s:any) => s.kegiatanId)]).size;
-    const unreported = planned - actual;
+
+    // Actual: Semua yang terlaksana (Rutin & Insidental)
+    // Dihitung berdasarkan ID unik kegiatan yang masuk hari ini
+    const actualIds = new Set([...kToday.map((k:any) => k.kegiatanId), ...sToday.map((s:any) => s.kegiatanId)]);
+    const actual = actualIds.size;
+
+    // Unreported: Hanya mengecek yang Rutin terjadwal tapi tidak ada di actual
+    const reportedPlannedIds = new Set(
+      plannedActivities
+        .filter(pk => actualIds.has(pk.id))
+        .map(pk => pk.id)
+    );
+    const unreported = planned - reportedPlannedIds.size;
 
     return {
       planned,

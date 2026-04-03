@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { getLocalData } from '../../lib/storage';
-import { MASTER_SISWA, KELAS_LIST } from '../../data/mock';
+import { fetchSiswa } from '../../lib/api';
 import { format, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -14,39 +13,66 @@ export const RaportSiswa: React.FC = () => {
   const [siswaId, setSiswaId] = useState('');
   const [reportData, setReportData] = useState<any[] | null>(null);
 
-  const availableSiswa = MASTER_SISWA.filter(s => 
+  const [masterSiswa, setMasterSiswa] = useState<any[]>([]);
+  const [kelasList, setKelasList] = useState<string[]>([]);
+  
+  useEffect(() => {
+    const loadSiswa = async () => {
+      try {
+        const sw = await fetchSiswa();
+        setMasterSiswa(sw);
+        const uniqueKelas = Array.from(new Set(sw.map((s: any) => s.kelas))) as string[];
+        setKelasList(uniqueKelas.sort());
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadSiswa();
+  }, []);
+
+  const availableSiswa = masterSiswa.filter(s => 
     (genderFilter === 'Semua' || s.gender === genderFilter) &&
     (kelas === '' || s.kelas === kelas)
   );
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!dateFrom || !dateTo || !siswaId) return;
 
-    const allData = getLocalData();
-    const siswa = MASTER_SISWA.find(s => s.id === siswaId);
-    if (!siswa) return;
+    try {
+      const res = await fetch('http://localhost:5000/api/records/supervisi');
+      const supervisiRecords = await res.json();
+      
+      const siswa = masterSiswa.find(s => s.id === siswaId);
+      if (!siswa) return;
 
-    const from = new Date(dateFrom).getTime();
-    const to = new Date(dateTo).getTime() + 86400000; // include end date
+      const from = new Date(dateFrom).getTime();
+      const to = new Date(dateTo).getTime() + 86400000; // include end date
 
-    const results: any[] = [];
+      const results: any[] = [];
 
-    allData.supervisiRecords.forEach(record => {
-      const recordTime = new Date(record.waktu).getTime();
-      if (recordTime >= from && recordTime <= to) {
-        const absensi = record.absensi.find(a => a.targetId === siswaId);
-        if (absensi) {
-          results.push({
-            tanggal: record.waktu,
-            kegiatan: record.kegiatanName,
-            kehadiran: absensi.kehadiran,
-            nilai: absensi.nilai
-          });
+      supervisiRecords.forEach((record: any) => {
+        const recordTime = new Date(record.waktu).getTime();
+        if (recordTime >= from && recordTime <= to) {
+          const absensiList = typeof record.absensi === 'string' ? JSON.parse(record.absensi) : record.absensi;
+          if (Array.isArray(absensiList)) {
+            const absensi = absensiList.find(a => a.targetId === siswaId);
+            if (absensi) {
+              results.push({
+                tanggal: record.waktu,
+                kegiatan: record.kegiatan_name || record.kegiatanName,
+                kehadiran: absensi.kehadiran,
+                nilai: absensi.nilai
+              });
+            }
+          }
         }
-      }
-    });
+      });
 
-    setReportData(results.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime()));
+      setReportData(results.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime()));
+    } catch (e) {
+      console.error(e);
+      alert('Gagal mengambil report data');
+    }
   };
 
   return (
@@ -71,7 +97,7 @@ export const RaportSiswa: React.FC = () => {
           <label className="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
           <select value={kelas} onChange={e => setKelas(e.target.value)} className="w-full border rounded-lg px-3 py-2">
             <option value="">Semua Kelas</option>
-            {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
+            {kelasList.map((k: string) => <option key={k} value={k}>{k}</option>)}
           </select>
         </div>
         <div>
@@ -91,8 +117,8 @@ export const RaportSiswa: React.FC = () => {
           <div className="mb-6 text-center hidden print:block">
             <h1 className="text-2xl font-bold">Raport Kegiatan Siswa</h1>
             <p className="text-gray-600">
-              Nama: {MASTER_SISWA.find(s => s.id === siswaId)?.name} | 
-              Kelas: {MASTER_SISWA.find(s => s.id === siswaId)?.kelas}
+              Nama: {masterSiswa.find(s => s.id === siswaId)?.name} | 
+              Kelas: {masterSiswa.find(s => s.id === siswaId)?.kelas}
             </p>
             <p className="text-gray-500 text-sm">Periode: {dateFrom} s/d {dateTo}</p>
           </div>
@@ -134,3 +160,4 @@ export const RaportSiswa: React.FC = () => {
     </div>
   );
 };
+

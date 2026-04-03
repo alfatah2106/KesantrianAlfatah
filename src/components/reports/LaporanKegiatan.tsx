@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { getLocalData } from '../../lib/storage';
-import { MASTER_KEGIATAN } from '../../data/mock';
+import { fetchKegiatan } from '../../lib/api';
 import { format, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -13,80 +12,111 @@ export const LaporanKegiatan: React.FC = () => {
   const [kegiatanId, setKegiatanId] = useState('');
   const [reportData, setReportData] = useState<any>(null);
 
-  const availableKegiatan = MASTER_KEGIATAN.filter(
+  const [masterKegiatan, setMasterKegiatan] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchKegiatan().then(setMasterKegiatan).catch(console.error);
+  }, []);
+
+  const availableKegiatan = masterKegiatan.filter(
     k => genderFilter === 'Semua' || k.gender === genderFilter
   );
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!dateFrom || !dateTo || !kegiatanId) return;
 
-    const allData = getLocalData();
-    const kegiatan = MASTER_KEGIATAN.find(k => k.id === kegiatanId);
-    if (!kegiatan) return;
+    try {
+      const [resKeg, resSup] = await Promise.all([
+        fetch('http://localhost:5000/api/records/kegiatan').then(r => r.json()),
+        fetch('http://localhost:5000/api/records/supervisi').then(r => r.json()),
+      ]);
 
-    const from = new Date(dateFrom).getTime();
-    const to = new Date(dateTo).getTime() + 86400000;
+      const kegiatan = availableKegiatan.find(k => k.id === kegiatanId);
+      if (!kegiatan) return;
 
-    const kegiatanList: any[] = [];
-    const supervisiStaff: any[] = [];
-    const supervisiSiswa: any[] = [];
-    const supervisiSop: any[] = [];
-    const photos: any[] = [];
+      const from = new Date(dateFrom).getTime();
+      const to = new Date(dateTo).getTime() + 86400000;
 
-    allData.kegiatanRecords.forEach(record => {
-      const recordTime = new Date(record.waktu).getTime();
-      if (recordTime >= from && recordTime <= to && record.kegiatanId === kegiatanId && (genderFilter === 'Semua' || record.gender === genderFilter)) {
-        const hadirCount = record.absensi.filter(a => a.kehadiran === 'Hadir').length;
-        kegiatanList.push({
-          tanggal: record.waktu,
-          staff: record.staffName,
-          catatan: record.catatan,
-          hadirRatio: `${hadirCount}/${record.absensi.length}`
-        });
-        
-        record.absensi.forEach(a => {
-          supervisiStaff.push({
+      const kegiatanList: any[] = [];
+      const supervisiStaff: any[] = [];
+      const supervisiSiswa: any[] = [];
+      const supervisiSop: any[] = [];
+      const photos: any[] = [];
+
+      resKeg.forEach((record: any) => {
+        const recordTime = new Date(record.waktu).getTime();
+        const recKegId = record.kegiatanId || record.kegiatan_id;
+        if (recordTime >= from && recordTime <= to && recKegId === kegiatanId && (genderFilter === 'Semua' || record.gender === genderFilter)) {
+          
+          const absensiList = typeof record.absensi === 'string' ? JSON.parse(record.absensi) : record.absensi;
+          const hadirCount = Array.isArray(absensiList) ? absensiList.filter((a: any) => a.kehadiran === 'Hadir').length : 0;
+
+          kegiatanList.push({
             tanggal: record.waktu,
-            nama: a.targetName,
-            kehadiran: a.kehadiran,
-            nilai: a.nilai
+            staff: record.staff_name || record.staffName,
+            catatan: record.catatan,
+            hadirRatio: Array.isArray(absensiList) ? `${hadirCount}/${absensiList.length}` : '0/0'
           });
-        });
+          
+          if (Array.isArray(absensiList)) {
+            absensiList.forEach((a: any) => {
+              supervisiStaff.push({
+                tanggal: record.waktu,
+                nama: a.targetName,
+                kehadiran: a.kehadiran,
+                nilai: a.nilai
+              });
+            });
+          }
 
-        if (record.fotoUrl) {
-          photos.push({ url: record.fotoUrl, caption: `${record.kegiatanName} - ${format(parseISO(record.waktu), 'dd MMM yyyy')}` });
+          if (record.foto_url || record.fotoUrl) {
+            photos.push({ url: record.foto_url || record.fotoUrl, caption: `${record.kegiatan_name || record.kegiatanName} - ${format(parseISO(record.waktu), 'dd MMM yyyy')}` });
+          }
         }
-      }
-    });
+      });
 
-    allData.supervisiRecords.forEach(record => {
-      const recordTime = new Date(record.waktu).getTime();
-      if (recordTime >= from && recordTime <= to && record.kegiatanId === kegiatanId && (genderFilter === 'Semua' || record.gender === genderFilter)) {
-        record.absensi.forEach(a => {
-          supervisiSiswa.push({
-            tanggal: record.waktu,
-            nama: a.targetName,
-            kelompok: record.kelompok,
-            kehadiran: a.kehadiran,
-            nilai: a.nilai
-          });
-        });
+      resSup.forEach((record: any) => {
+        const recordTime = new Date(record.waktu).getTime();
+        const recKegId = record.kegiatanId || record.kegiatan_id;
+        if (recordTime >= from && recordTime <= to && recKegId === kegiatanId && (genderFilter === 'Semua' || record.gender === genderFilter)) {
+          
+          const absensiList = typeof record.absensi === 'string' ? JSON.parse(record.absensi) : record.absensi;
+          if (Array.isArray(absensiList)) {
+            absensiList.forEach((a: any) => {
+              supervisiSiswa.push({
+                tanggal: record.waktu,
+                nama: a.targetName,
+                kelompok: record.kelompok,
+                kehadiran: a.kehadiran,
+                nilai: a.nilai
+              });
+            });
+          }
 
-        const checkedCount = record.sopChecklist.filter(s => s.checked).length;
-        const totalSop = record.sopChecklist.length;
-        const percentage = totalSop > 0 ? Math.round((checkedCount / totalSop) * 100) : 0;
-        
-        supervisiSop.push({
-          tanggal: record.waktu,
-          staff: record.staffName,
-          kelompok: record.kelompok,
-          percentage: `${percentage}% (${checkedCount}/${totalSop})`
-        });
-      }
-    });
+          const sopList = typeof record.sop_checklist === 'string' ? JSON.parse(record.sop_checklist) : (record.sop_checklist || record.sopChecklist);
+          if (Array.isArray(sopList)) {
+            const checkedCount = sopList.filter((s: any) => s.checked).length;
+            const totalSop = sopList.length;
+            const percentage = totalSop > 0 ? Math.round((checkedCount / totalSop) * 100) : 0;
+            
+            supervisiSop.push({
+              tanggal: record.waktu,
+              staff: record.staff_name || record.staffName,
+              kelompok: record.kelompok,
+              percentage: `${percentage}% (${checkedCount}/${totalSop})`
+            });
+          }
+        }
+      });
 
-    setReportData({ kegiatanList, supervisiStaff, supervisiSiswa, supervisiSop, photos, kegiatanName: kegiatan.name });
+      setReportData({ kegiatanList, supervisiStaff, supervisiSiswa, supervisiSop, photos, kegiatanName: kegiatan.name });
+
+    } catch(err) {
+      console.error(err);
+      alert('Gagal mengambil laporan kegiatan');
+    }
   };
+
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">

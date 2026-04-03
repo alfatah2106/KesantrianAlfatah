@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { getLocalData } from '../../lib/storage';
-import { MASTER_STAFF } from '../../data/mock';
+import { fetchStaff } from '../../lib/api';
 import { format, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -13,50 +12,71 @@ export const LaporanStaff: React.FC = () => {
   const [staffId, setStaffId] = useState('');
   const [reportData, setReportData] = useState<any>(null);
 
-  const availableStaff = MASTER_STAFF.filter(s => 
+  const [masterStaff, setMasterStaff] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchStaff().then(setMasterStaff).catch(console.error);
+  }, []);
+
+  const availableStaff = masterStaff.filter(s => 
     genderFilter === 'Semua' || s.gender === genderFilter
   );
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!dateFrom || !dateTo || !staffId) return;
 
-    const allData = getLocalData();
-    const staff = MASTER_STAFF.find(s => s.id === staffId);
-    if (!staff) return;
+    try {
+      const res = await fetch('http://localhost:5000/api/records/kegiatan');
+      const kegiatanRecords = await res.json();
 
-    const from = new Date(dateFrom).getTime();
-    const to = new Date(dateTo).getTime() + 86400000;
+      const staff = masterStaff.find(s => s.id === staffId);
+      if (!staff) return;
 
-    const kegiatanDipimpin: any[] = [];
-    const absensiStaff: any[] = [];
-    const photos: any[] = [];
+      const from = new Date(dateFrom).getTime();
+      const to = new Date(dateTo).getTime() + 86400000;
 
-    // Table 1: Kegiatan yang dipimpin oleh staff ini
-    allData.kegiatanRecords.forEach(record => {
-      const recordTime = new Date(record.waktu).getTime();
-      if (recordTime >= from && recordTime <= to) {
-        if (record.staffId === staffId) {
-          kegiatanDipimpin.push(record);
-          if (record.fotoUrl) {
-            photos.push({ url: record.fotoUrl, caption: `${record.kegiatanName} - ${format(parseISO(record.waktu), 'dd MMM yyyy')}` });
+      const kegiatanDipimpin: any[] = [];
+      const absensiStaff: any[] = [];
+      const photos: any[] = [];
+
+      kegiatanRecords.forEach((record: any) => {
+        const recordTime = new Date(record.waktu).getTime();
+        if (recordTime >= from && recordTime <= to) {
+          if (record.staff_id === staffId || record.staffId === staffId) {
+            kegiatanDipimpin.push({
+              ...record,
+              kegiatanName: record.kegiatan_name || record.kegiatanName
+            });
+            if (record.foto_url || record.fotoUrl) {
+              photos.push({ 
+                url: record.foto_url || record.fotoUrl, 
+                caption: `${record.kegiatan_name || record.kegiatanName} - ${format(parseISO(record.waktu), 'dd MMM yyyy')}` 
+              });
+            }
+          }
+          
+          const absensiList = typeof record.absensi === 'string' ? JSON.parse(record.absensi) : record.absensi;
+          if (Array.isArray(absensiList)) {
+            const absensi = absensiList.find(a => a.targetId === staffId);
+            if (absensi) {
+              absensiStaff.push({
+                tanggal: record.waktu,
+                kegiatan: record.kegiatan_name || record.kegiatanName,
+                kehadiran: absensi.kehadiran,
+                nilai: absensi.nilai
+              });
+            }
           }
         }
-        
-        // Table 2: Absensi staff ini di kegiatan apapun
-        const absensi = record.absensi.find(a => a.targetId === staffId);
-        if (absensi) {
-          absensiStaff.push({
-            tanggal: record.waktu,
-            kegiatan: record.kegiatanName,
-            kehadiran: absensi.kehadiran,
-            nilai: absensi.nilai
-          });
-        }
-      }
-    });
+      });
 
-    setReportData({ kegiatanDipimpin, absensiStaff, photos, staffName: staff.name });
+      setReportData({ kegiatanDipimpin, absensiStaff, photos, staffName: staff.name });
+    } catch (e) {
+      console.error(e);
+      alert('Gagal mengambil laporan staff');
+    }
   };
+
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { getLocalData } from '../lib/storage';
 import { Users, Activity, CheckSquare, Calendar } from 'lucide-react';
+
+const API_BASE_URL = 'http://localhost:5000/api';
 
 export const Dashboard: React.FC = () => {
   const { genderFilter } = useAppContext();
@@ -13,22 +14,34 @@ export const Dashboard: React.FC = () => {
   });
 
   useEffect(() => {
-    const data = getLocalData();
-    const today = new Date().toISOString().split('T')[0];
+    const fetchData = async () => {
+      try {
+        const [resKeg, resSup] = await Promise.all([
+          fetch(`${API_BASE_URL}/records/kegiatan`).then(r => r.json()),
+          fetch(`${API_BASE_URL}/records/supervisi`).then(r => r.json())
+        ]);
+        
+        const today = new Date().toISOString().split('T')[0];
 
-    const filteredKegiatan = data.kegiatanRecords.filter(
-      (r) => genderFilter === 'Semua' || r.gender === genderFilter
-    );
-    const filteredSupervisi = data.supervisiRecords.filter(
-      (r) => genderFilter === 'Semua' || r.gender === genderFilter
-    );
+        const filteredKegiatan = resKeg.filter(
+          (r: any) => genderFilter === 'Semua' || r.gender === genderFilter
+        );
+        const filteredSupervisi = resSup.filter(
+          (r: any) => genderFilter === 'Semua' || r.gender === genderFilter
+        );
 
-    setStats({
-      totalKegiatan: filteredKegiatan.length,
-      totalSupervisi: filteredSupervisi.length,
-      kegiatanHariIni: filteredKegiatan.filter(r => r.waktu.startsWith(today)).length,
-      supervisiHariIni: filteredSupervisi.filter(r => r.waktu.startsWith(today)).length,
-    });
+        setStats({
+          totalKegiatan: filteredKegiatan.length,
+          totalSupervisi: filteredSupervisi.length,
+          kegiatanHariIni: filteredKegiatan.filter((r: any) => r.waktu.startsWith(today)).length,
+          supervisiHariIni: filteredSupervisi.filter((r: any) => r.waktu.startsWith(today)).length,
+        });
+      } catch (err) {
+        console.error('Error fetching dashboard stats:', err);
+      }
+    };
+    
+    fetchData();
   }, [genderFilter]);
 
   return (

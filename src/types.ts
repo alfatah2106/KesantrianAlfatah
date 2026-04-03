@@ -27,12 +27,13 @@ export interface Staff {
 export interface MasterKegiatan {
   id: string;
   name: string;
-  gender: Gender; // Pemisahan spesifik per gender
+  gender: Gender;
   sops: string[];
-  // Menentukan secara spesifik siapa yang hadir untuk Form Kegiatan
-  targetStaffIds: string[]; 
-  // Menentukan kelompok mana saja yang valid untuk disupervisi pada kegiatan ini
-  targetKelompok: string[]; 
+  target_staff_ids: string[]; 
+  target_kelompok: string[]; 
+  tipe: 'Rutin' | 'Insidental';
+  hari: string; // "1,2,3,4,5,6,7"
+  pekan: string; // "1,2,3,4,5"
 }
 
 export interface AbsensiRecord {

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { MASTER_KEGIATAN, MASTER_STAFF, MASTER_SISWA, KELOMPOK_LIST } from '../../data/mock';
-import { AbsensiRecord, FormSupervisiData } from '../../types';
-import { addSupervisiRecord } from '../../lib/storage';
+import { fetchStaff, fetchSiswa, fetchKegiatan, submitFormSupervisi } from '../../lib/api';
+import { AbsensiRecord, FormSupervisiData, Staff, Siswa, MasterKegiatan } from '../../types';
 
 export const FormSupervisi: React.FC = () => {
   const { user, genderFilter } = useAppContext();
@@ -13,26 +12,33 @@ export const FormSupervisi: React.FC = () => {
   const [absensi, setAbsensi] = useState<AbsensiRecord[]>([]);
   const [sopChecklist, setSopChecklist] = useState<{sop: string, checked: boolean}[]>([]);
 
-  // Filter kegiatan based on gender filter
-  const availableKegiatan = MASTER_KEGIATAN.filter(
-    k => genderFilter === 'Semua' || k.gender === genderFilter
-  );
-
-  const availableStaff = MASTER_STAFF.filter(
-    s => genderFilter === 'Semua' || s.gender === genderFilter
-  );
-
+  const [availableKegiatan, setAvailableKegiatan] = useState<MasterKegiatan[]>([]);
+  const [availableStaff, setAvailableStaff] = useState<Staff[]>([]);
+  const [availableSiswa, setAvailableSiswa] = useState<Siswa[]>([]);
   const [availableKelompok, setAvailableKelompok] = useState<string[]>([]);
 
   useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [st, sw, kg] = await Promise.all([fetchStaff(), fetchSiswa(), fetchKegiatan()]);
+        setAvailableStaff(st.filter((s: Staff) => genderFilter === 'Semua' || s.gender === genderFilter));
+        setAvailableSiswa(sw.filter((s: Siswa) => genderFilter === 'Semua' || s.gender === genderFilter));
+        setAvailableKegiatan(kg.filter((k: MasterKegiatan) => genderFilter === 'Semua' || k.gender === genderFilter));
+      } catch (error) {
+        console.error("Error loading master data", error);
+      }
+    };
+    loadData();
+  }, [genderFilter]);
+
+  useEffect(() => {
     if (kegiatanId) {
-      const kegiatan = MASTER_KEGIATAN.find(k => k.id === kegiatanId);
+      const kegiatan: any = availableKegiatan.find(k => k.id === kegiatanId);
       if (kegiatan) {
-        setSopChecklist(kegiatan.sops.map(sop => ({ sop, checked: false })));
-        // Set available kelompok based on targetKelompok
-        setAvailableKelompok(kegiatan.targetKelompok);
-        // Reset kelompok if the currently selected one is not in the new list
-        if (!kegiatan.targetKelompok.includes(kelompok)) {
+        setSopChecklist((kegiatan.sops || []).map((sop: string) => ({ sop, checked: false })));
+        const targetKelp = kegiatan.target_kelompok || kegiatan.targetKelompok || [];
+        setAvailableKelompok(targetKelp);
+        if (!targetKelp.includes(kelompok)) {
           setKelompok('');
         }
       }
@@ -41,21 +47,26 @@ export const FormSupervisi: React.FC = () => {
       setAvailableKelompok([]);
       setKelompok('');
     }
-  }, [kegiatanId]);
+  }, [kegiatanId, availableKegiatan]);
 
-  // Reset selected kegiatan if it doesn't match the new gender filter
   useEffect(() => {
     if (kegiatanId) {
-      const kegiatan = MASTER_KEGIATAN.find(k => k.id === kegiatanId);
+      const kegiatan = availableKegiatan.find(k => k.id === kegiatanId);
       if (kegiatan && genderFilter !== 'Semua' && kegiatan.gender !== genderFilter) {
         setKegiatanId('');
       }
     }
-  }, [genderFilter, kegiatanId]);
+  }, [genderFilter, kegiatanId, availableKegiatan]);
 
   useEffect(() => {
     if (kelompok) {
-      const anggotaKelompok = MASTER_SISWA.filter(s => s.kelompok === kelompok);
+      // Filter siswa: mendukung banyak kelompok (misal: "A1, B1, C1")
+      const anggotaKelompok = availableSiswa.filter(s => {
+        if (!s.kelompok) return false;
+        const groups = s.kelompok.split(',').map(g => g.trim().toLowerCase());
+        return groups.includes(kelompok.trim().toLowerCase());
+      });
+
       const initialAbsensi: AbsensiRecord[] = anggotaKelompok.map(siswa => ({
         targetId: siswa.id,
         targetName: siswa.name,
@@ -66,7 +77,7 @@ export const FormSupervisi: React.FC = () => {
     } else {
       setAbsensi([]);
     }
-  }, [kelompok]);
+  }, [kelompok, availableSiswa]);
 
   const handleAbsensiChange = (targetId: string, field: keyof AbsensiRecord, value: any) => {
     setAbsensi(prev => prev.map(a => 
@@ -82,38 +93,40 @@ export const FormSupervisi: React.FC = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kegiatanId || !staffId || !kelompok) return;
 
-    const kegiatan = MASTER_KEGIATAN.find(k => k.id === kegiatanId);
+    const kegiatan = availableKegiatan.find(k => k.id === kegiatanId);
     const kegiatanName = kegiatan?.name || '';
-    const staffName = MASTER_STAFF.find(s => s.id === staffId)?.name || '';
+    const staffName = availableStaff.find(s => s.id === staffId)?.name || '';
 
-    const record: FormSupervisiData = {
+    const record: any = {
       id: Math.random().toString(36).substr(2, 9),
-      type: 'supervisi',
-      kegiatanId,
-      kegiatanName,
-      staffId,
-      staffName,
+      kegiatan_id: kegiatanId,
+      kegiatan_name: kegiatanName,
+      staff_id: staffId,
+      staff_name: staffName,
       kelompok,
       absensi,
-      sopChecklist,
+      sop_checklist: sopChecklist,
       email: user?.email || '',
-      waktu: new Date().toISOString(),
       gender: kegiatan?.gender || 'Putra',
     };
 
-    addSupervisiRecord(record);
-    alert('Data Supervisi berhasil disimpan!');
-    
-    // Reset
-    setKegiatanId('');
-    setStaffId('');
-    setKelompok('');
-    setAbsensi([]);
-    setSopChecklist([]);
+    try {
+      await submitFormSupervisi(record);
+      alert('Data Supervisi berhasil disimpan!');
+      
+      setKegiatanId('');
+      setStaffId('');
+      setKelompok('');
+      setAbsensi([]);
+      setSopChecklist([]);
+    } catch (err) {
+      alert('Gagal menyimpan data');
+      console.error(err);
+    }
   };
 
   return (
